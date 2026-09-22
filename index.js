@@ -43,6 +43,7 @@ const badWordsPattern = new RegExp(badWords.join('|'), 'i');
 
 
 client.on('messageCreate', async (message) => {
+    try {
     if (message.author.bot) return;
 
     if (badWordsPattern.test(message.content)) {
@@ -73,26 +74,35 @@ client.on('messageCreate', async (message) => {
         }
         
     }
-    const now = Date.now();
 
-    if (!messageTimestamps.has(userId)) {
-        messageTimestamps.set(userId, []);
-    }
-    
-    const timestamps = messageTimestamps.get(userId);
-    timestamps.push(now);
+        const now = Date.now();
 
-    const recentTimestamps = timestamps.filter(t => now - t <= 5000); // last 5 seconds
-    messageTimestamps.set(userId, recentTimestamps);
+        if (!messageTimestamps.has(userId)) {
+            messageTimestamps.set(userId, []);
+        }
 
-    console.log(`${message.author.tag}: ${recentTimestamps.length} messages in the last 5 seconds`);
+        const timestamps = messageTimestamps.get(userId);
+        timestamps.push(now);
 
-    if (recentTimestamps.length > 5) { // more than 5 messages in the last 5 seconds
-        await message.member.timeout(60000, 'Spam detected: too many messages too quickly');
-        await message.channel.send(`${message.author} has been timed out for spamming.`);
-        messageTimestamps.set(userId, []); // reset the user's message timestamps after timeout
+        const recentTimestamps = timestamps.filter(t => now - t <= 5000); // last 5 seconds
+        messageTimestamps.set(userId, recentTimestamps);
+
+        console.log(`${message.author.tag}: ${recentTimestamps.length} messages in the last 5 seconds`);
+
+        if (recentTimestamps.length > 5) { // more than 5 messages in the last 5 seconds
+            await message.member.timeout(60000, 'Spam detected: too many messages too quickly');
+            await message.channel.send(`${message.author} has been timed out for spamming.`);
+            messageTimestamps.set(userId, []); // reset the user's message timestamps after timeout
+        }
+    } catch (error) {
+        console.error('Error handling message:', error);
     }
 });
+
+process.on('unhandledRejection', (error) => {
+    console.error('Unhandled promise rejection:', error);
+});
+
 
 
 client.login(process.env.DISCORD_TOKEN);
