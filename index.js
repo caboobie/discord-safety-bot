@@ -21,7 +21,7 @@ async function reportViolation(message, reason) {
                    `**User:** ${message.author.tag} (${message.author.id})\n` +
                    `**Reason:** ${reason}\n` +
                    `**Message:** ${message.content}` +
-                   `<&${process.env.MODERATOR_ROLE_ID}>`;
+                   `<@&${process.env.MODERATOR_ROLE_ID}>`;
     
     if (logChannel) {
         await logChannel.send(report);
@@ -50,7 +50,7 @@ client.on('guildMemberAdd', async (member) => {
             const warning = ` ⚠️ **New Member with Young Account**\n` +
                             `**User:** ${member.user.tag} (${member.user.id})\n` +
                             `**Account Age:** ${accountAgeDays.toFixed(1)} days\n` +
-                            `<&${process.env.MODERATOR_ROLE_ID}>`;
+                            `<@&${process.env.MODERATOR_ROLE_ID}>`;
 
             if (logChannel) {
                 await logChannel.send(warning);
@@ -61,11 +61,29 @@ client.on('guildMemberAdd', async (member) => {
     }
 });
 
+function normalizeText(text) {
+    let normalized = text
+        .toLowerCase()
+        .replace(/0/g, 'o')
+        .replace(/1/g, 'i')
+        .replace(/3/g, 'e')
+        .replace(/4/g, 'a')
+        .replace(/5/g, 's')
+        .replace(/7/g, 't')
+        .replace(/@/g, 'a')
+        .replace(/\$/g, 's');
+
+        normalized = normalized.replace(/\b(\w)(\s+\w){2,}\b/g, (match) => match.replace(/\s+/g, ''));
+        
+    return normalized;
+}
+
+
 client.on('messageCreate', async (message) => {
     try {
     if (message.author.bot) return;
 
-    if (badWordsPattern.test(message.content)) {
+    if (badWordsPattern.test(normalizeText(message.content))) {
         await message.delete();
         await message.channel.send(`${message.author} posted a message containing prohibited words.`);
         await reportViolation(message, 'Posted a message containing prohibited words.');
@@ -108,7 +126,7 @@ client.on('messageCreate', async (message) => {
 
         console.log(`${message.author.tag}: ${recentTimestamps.length} messages in the last 5 seconds`);
 
-        if (recentTimestamps.length > 5) { // more than 5 messages in the last 5 seconds
+        if (recentTimestamps.length >= 4) { // more than 4 messages in the last 5 seconds
             await message.member.timeout(60000, 'Spam detected: too many messages too quickly');
             await message.channel.send(`${message.author} has been timed out for spamming.`);
             messageTimestamps.set(userId, []); // reset the user's message timestamps after timeout
