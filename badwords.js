@@ -379,6 +379,16 @@ module.exports = [
   'yellow showers',
   'yiffy',
   'zoophilia',
-  '🖕'
-
+  '🖕',
+  'retard',
+  'faggot',
+  'kike',
+  'cuck',
+  'fag',
+  'nob',
+  'incel',
+  'virgin',
+  'inbred',
+  'nig'
+  
 ]

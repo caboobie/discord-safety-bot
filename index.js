@@ -35,7 +35,7 @@ const messageTimestamps = new Map();
 
 const messageCounts = new Map();
 const TRUST_MESSAGES_THRESHOLD = 15;
-const TRUST_DAYS_THRESHOLD = 3;
+const TRUST_DAYS_THRESHOLD = 1;
 const linkPattern = /https?:\/\/[^\s]+/i;
 const badWords = require('./badwords.js');
 const badWordsPattern = new RegExp(badWords.join('|'), 'i');
@@ -74,7 +74,7 @@ function normalizeText(text) {
         .replace(/\$/g, 's');
 
         normalized = normalized.replace(/\b(\w)(\s+\w){2,}\b/g, (match) => match.replace(/\s+/g, ''));
-        
+
     return normalized;
 }
 
