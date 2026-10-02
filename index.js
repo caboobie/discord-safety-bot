@@ -39,8 +39,27 @@ const TRUST_DAYS_THRESHOLD = 3;
 const linkPattern = /https?:\/\/[^\s]+/i;
 const badWords = require('./badwords.js');
 const badWordsPattern = new RegExp(badWords.join('|'), 'i');
+const ACCOUNT_AGE_THRESHOLD = 3; // in days
 
+client.on('guildMemberAdd', async (member) => {
+    try {
+        const accountAgeDays = (Date.now() - member.user.createdTimestamp) / (1000 * 60 *60 *24);
 
+        if (accountAgeDays < ACCOUNT_AGE_THRESHOLD) {
+            const logChannel = member.guild.channels.cache.get(process.env.MOD_LOG_CHANNEL_ID);
+            const warning = ` ⚠️ **New Member with Young Account**\n` +
+                            `**User:** ${member.user.tag} (${member.user.id})\n` +
+                            `**Account Age:** ${accountAgeDays.toFixed(1)} days\n` +
+                            `<&${process.env.MODERATOR_ROLE_ID}>`;
+
+            if (logChannel) {
+                await logChannel.send(warning);
+            }
+        }
+    } catch (error) {
+        console.error('Error handling new guild member:', error);
+    }
+});
 
 client.on('messageCreate', async (message) => {
     try {
