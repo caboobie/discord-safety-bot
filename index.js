@@ -1,4 +1,13 @@
 require('dotenv').config();
+
+const { Pool } = require('pg');
+
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false
+    }
+});
 const { Client, GatewayIntentBits } = require('discord.js');
 
 const client = new Client({
@@ -11,7 +20,7 @@ const client = new Client({
 });
 
 const messageTimestamps = new Map();
-const messageCounts = new Map();
+//const messageCounts = new Map();
 const TRUST_MESSAGES_THRESHOLD = 15;
 const TRUST_DAYS_THRESHOLD = 1;
 const linkPattern = /https?:\/\/[^\s]+/i;
@@ -20,6 +29,16 @@ const ACCOUNT_AGE_THRESHOLD = 3; // in days
 const badWords = require('./badwords.js');
 const badWordsPattern = new RegExp(`\\b(${badWords.join('|')})\\b`, 'i');
 const badWordsPatternLoose = new RegExp(badWords.join('|'), 'i');
+
+async function initDatabase() {
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_trust (
+            discord_id TEXT PRIMARY KEY,
+            message_count INTEGER DEFAULT 0
+    )
+    `);
+    console.log('Database ready.');
+}
 
 function normalizeText(text) {
   return text
@@ -57,8 +76,9 @@ async function reportViolation(message, reason) {
   //console.log('Report DMed to owner.');
 }
 
-client.once('clientReady', () => {
+client.once('clientReady', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
+  await initDatabase();
 });
 
 client.on('guildMemberAdd', async (member) => {
@@ -115,8 +135,12 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
-    const currentCount = messageCounts.get(userId) || 0;
-    messageCounts.set(userId, currentCount + 1);
+    const result = await pool.query(
+        'INSERT INTO user_trust (discord_id, message_count) VALUES ($1, 1) ON CONFLICT (discord_id) DO UPDATE SET message_count = user_trust.message_count + 1 RETURNING message_count',
+        [userId]
+    );
+    const currentCount = result.rows[0].message_count;
+    //console.log(`${message.author.tag} now has ${currentCount} messages in the database.`);
 
     if (linkPattern.test(message.content)) {
       const joinedAt = message.member.joinedTimestamp;
