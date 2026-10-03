@@ -36,10 +36,10 @@ function normalizeText(text) {
 }
 
 async function reportViolation(message, reason) {
-  console.log('reportViolation called. MOD_LOG_CHANNEL_ID:', process.env.MOD_LOG_CHANNEL_ID);
+  //console.log('reportViolation called. MOD_LOG_CHANNEL_ID:', process.env.MOD_LOG_CHANNEL_ID);
 
   const logChannel = message.guild.channels.cache.get(process.env.MOD_LOG_CHANNEL_ID);
-  console.log('logChannel found:', logChannel ? logChannel.name : 'NOT FOUND');
+  //console.log('logChannel found:', logChannel ? logChannel.name : 'NOT FOUND');
 
   const report = `🚨 **Violation Detected**\n` +
     `**User:** ${message.author.tag} (${message.author.id})\n` +
@@ -49,12 +49,12 @@ async function reportViolation(message, reason) {
 
   if (logChannel) {
     await logChannel.send(report);
-    console.log('Report sent to log channel.');
+    //console.log('Report sent to log channel.');
   }
 
   const owner = await message.guild.fetchOwner();
   await owner.send(report);
-  console.log('Report DMed to owner.');
+  //console.log('Report DMed to owner.');
 }
 
 client.once('clientReady', () => {
