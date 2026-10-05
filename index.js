@@ -31,7 +31,7 @@ const badWordsPattern = new RegExp(`\\b(${badWords.join('|')})\\b`, 'i');
 const badWordsPatternLoose = new RegExp(badWords.join('|'), 'i');
 
 async function initDatabase() {
-  await pool.query(`DROP TABLE IF EXISTS user_trust;`);
+  //await pool.query(`DROP TABLE IF EXISTS user_trust;`);
 
     await pool.query(`
         CREATE TABLE IF NOT EXISTS guild_settings (
