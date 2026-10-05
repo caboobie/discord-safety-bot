@@ -69,14 +69,22 @@ function normalizeText(text) {
 async function reportViolation(message, reason) {
   //console.log('reportViolation called. MOD_LOG_CHANNEL_ID:', process.env.MOD_LOG_CHANNEL_ID);
 
-  const logChannel = message.guild.channels.cache.get(process.env.MOD_LOG_CHANNEL_ID);
+  const settingResult = await pool.query(
+    'SELECT mod_log_channel_id, moderator_role_id FROM guild_settings WHERE guild_id = $1',
+    [message.guild.id]
+  );
+
+  if (settingResult.rows.length === 0) return;
+
+  const { mod_log_channel_id, moderator_role_id } = settingResult.rows[0];
+  const logChannel = message.guild.channels.cache.get(mod_log_channel_id);
   //console.log('logChannel found:', logChannel ? logChannel.name : 'NOT FOUND');
 
   const report = `🚨 **Violation Detected**\n` +
     `**User:** ${message.author.tag} (${message.author.id})\n` +
     `**Reason:** ${reason}\n` +
     `**Message:** ${message.content}\n` +
-    `<@&${process.env.MODERATOR_ROLE_ID}>`;
+    `<@&${moderator_role_id}>`;
 
   if (logChannel) {
     await logChannel.send(report);
@@ -98,11 +106,21 @@ client.on('guildMemberAdd', async (member) => {
     const accountAgeDays = (Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24);
 
     if (accountAgeDays < ACCOUNT_AGE_THRESHOLD) {
-      const logChannel = member.guild.channels.cache.get(process.env.MOD_LOG_CHANNEL_ID);
+      const settingResult = await pool.query(
+        'SELECT mod_log_channel_id, moderator_role_id FROM guild_settings WHERE guild_id = $1',
+        [member.guild.id]
+      );
+
+      if (settingResult.rows.length === 0) return;
+
+      const { mod_log_channel_id, moderator_role_id } = settingResult.rows[0];
+      
+      const logChannel = member.guild.channels.cache.get(mod_log_channel_id);
+      
       const warning = `⚠️ **New Member with Young Account**\n` +
         `**User:** ${member.user.tag} (${member.user.id})\n` +
         `**Account Age:** ${accountAgeDays.toFixed(1)} days\n` +
-        `<@&${process.env.MODERATOR_ROLE_ID}>`;
+        `<@&${moderator_role_id}>`;
 
       if (logChannel) {
         await logChannel.send(warning);
@@ -116,24 +134,51 @@ client.on('guildMemberAdd', async (member) => {
 client.on('messageCreate', async (message) => {
   try {
     if (message.author.bot) return;
+    
+    if (message.content.startsWith('!setup') && message.member.permissions.has('ManageGuild')) {
+      const channelMention = message.mentions.channels.first();
+      const roleMention = message.mentions.roles.first();
+
+      if (!channelMention || !roleMention) {
+        await message.channel.send('usage: `!setup #mod-log-channel @moderatorRole`');
+        return;
+      }
+
+      await pool.query(
+        'INSERT INTO guild_settings (guild_id, mod_log_channel_id, moderator_role_id) ' +
+        'VALUES ($1, $2, $3) ' +
+        'ON CONFLICT (guild_id) DO UPDATE SET ' +
+        'mod_log_channel_id = $2, moderator_role_id = $3',
+        [message.guild.id, channelMention.id, roleMention.id]
+      );
+
+      await message.channel.send(`Setup complete. Mod log: ${channelMention}, Moderator role: ${roleMention}`);
+      return;
+    }
+
+
+
+    if (message.author.bot) return;
 
     const userId = message.author.id;
     const now = Date.now();
+    const timestampKey = `${message.guild.id}-${userId}`;
 
-    if (!messageTimestamps.has(userId)) {
-      messageTimestamps.set(userId, []);
+    if (!messageTimestamps.has(timestampKey)) {
+      messageTimestamps.set(timestampKey, []);
     }
-    const timestamps = messageTimestamps.get(userId);
+
+    const timestamps = messageTimestamps.get(timestampKey);
     timestamps.push(now);
     const recentTimestamps = timestamps.filter(t => now - t <= 5000);
-    messageTimestamps.set(userId, recentTimestamps);
+    messageTimestamps.set(timestampKey, recentTimestamps);
 
     console.log(`${message.author.tag}: ${recentTimestamps.length} messages in the last 5 seconds`);
 
     if (recentTimestamps.length >= 4) {
       await message.member.timeout(60000, 'Spam detected: too many messages too quickly');
       await message.channel.send(`${message.author} has been timed out for spamming.`);
-      messageTimestamps.set(userId, []);
+      messageTimestamps.set(timestampKey, []);
       return;
     }
 
@@ -148,8 +193,12 @@ client.on('messageCreate', async (message) => {
     }
 
     const result = await pool.query(
-        'INSERT INTO user_trust (discord_id, message_count) VALUES ($1, 1) ON CONFLICT (discord_id) DO UPDATE SET message_count = user_trust.message_count + 1 RETURNING message_count',
-        [userId]
+        `INSERT INTO user_trust (guild_id, discord_id, message_count)
+        VALUES ($1, $2, 1)
+        ON CONFLICT (guild_id, discord_id) DO UPDATE
+        SET message_count = user_trust.message_count + 1
+        RETURNING message_count`,
+        [message.guild.id, userId]
     );
     const currentCount = result.rows[0].message_count;
     //console.log(`${message.author.tag} now has ${currentCount} messages in the database.`);
