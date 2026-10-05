@@ -31,11 +31,23 @@ const badWordsPattern = new RegExp(`\\b(${badWords.join('|')})\\b`, 'i');
 const badWordsPatternLoose = new RegExp(badWords.join('|'), 'i');
 
 async function initDatabase() {
+  await pool.query(`DROP TABLE IF EXISTS user_trust;`);
+
     await pool.query(`
-        CREATE TABLE IF NOT EXISTS user_trust (
-            discord_id TEXT PRIMARY KEY,
-            message_count INTEGER DEFAULT 0
-    )
+        CREATE TABLE IF NOT EXISTS guild_settings (
+            guild_id TEXT PRIMARY KEY,
+            mod_log_channel_id TEXT,
+            moderator_role_id TEXT
+        );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_trust (
+        guild_id TEXT NOT NULL,
+        discord_id TEXT NOT NULL,
+        message_count INTEGER DEFAULT 0,
+        PRIMARY KEY (guild_id, discord_id)
+      );
     `);
     console.log('Database ready.');
 }
