@@ -157,9 +157,6 @@ client.on('messageCreate', async (message) => {
     }
 
 
-
-    if (message.author.bot) return;
-
     const userId = message.author.id;
     const now = Date.now();
     const timestampKey = `${message.guild.id}-${userId}`;
