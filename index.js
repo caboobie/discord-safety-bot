@@ -91,8 +91,8 @@ async function reportViolation(message, reason) {
     //console.log('Report sent to log channel.');
   }
 
-  const owner = await message.guild.fetchOwner();
-  await owner.send(report);
+  //const owner = await message.guild.fetchOwner();
+  //await owner.send(report);
   //console.log('Report DMed to owner.');
 }
 
