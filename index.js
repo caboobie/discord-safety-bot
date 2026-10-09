@@ -31,32 +31,31 @@ const badWordsPattern = new RegExp(`\\b(${badWords.join('|')})\\b`, 'i');
 const badWordsPatternLoose = new RegExp(badWords.join('|'), 'i');
 
 async function initDatabase() {
-  //await pool.query(`DROP TABLE IF EXISTS user_trust;`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS guild_settings (
+      guild_id TEXT PRIMARY KEY,
+      mod_log_channel_id TEXT,
+      moderator_role_id TEXT
+    );
+  `);
 
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS guild_settings (
-            guild_id TEXT PRIMARY KEY,
-            mod_log_channel_id TEXT,
-            moderator_role_id TEXT
-        );
-    `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_trust (
+      guild_id TEXT NOT NULL,
+      discord_id TEXT NOT NULL,
+      message_count INTEGER DEFAULT 0,
+      manually_trusted BOOLEAN DEFAULT FALSE,
+      PRIMARY KEY (guild_id, discord_id)
+    );
+  `);
 
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS user_trust (
-        guild_id TEXT NOT NULL,
-        discord_id TEXT NOT NULL,
-        message_count INTEGER DEFAULT 0,
-        manually_trusted BOOLEAN DEFAULT FALSE,
-        PRIMARY KEY (guild_id, discord_id)
-      );
-    `);
-    console.log('Database ready.');
+  await pool.query(`
+    ALTER TABLE user_trust
+    ADD COLUMN IF NOT EXISTS manually_trusted BOOLEAN DEFAULT FALSE;
+  `);
+
+  console.log('Database ready.');
 }
-
-await pool.query(`
-  ALTER TABLE user_trust
-  ADD COLUMN IF NOT EXISTS manually_trusted BOOLEAN DEFAULT FALSE;
-`);
 
 function normalizeText(text) {
   return text
@@ -150,27 +149,6 @@ client.on('messageCreate', async (message) => {
         return;
       }
 
-      if (message.content.startsWith('!trust') && message.member.permissions.has('ManageGuild')) {
-        const mentionedUser = message.mentions.users.first();
-
-        if (!mentionedUser) {
-          await message.channel.send('usage: `!trust @user`');
-          return;
-        }
-
-        await pool.query(
-          `INSERT INTO user_trust (guild_id, discord_id, manually_trusted)
-           VALUES ($1, $2, TRUE)
-           ON CONFLICT (guild_id, discord_id) DO UPDATE
-           SET manually_trusted = TRUE`,
-           [message.guild.id, mentionedUser.id]
-        );
-
-        await message.channel.send(`${mentionedUser} has been manually trusted.`);
-        return;
-      }
-      // End of !trust command handling
-
       await pool.query(
         'INSERT INTO guild_settings (guild_id, mod_log_channel_id, moderator_role_id) ' +
         'VALUES ($1, $2, $3) ' +
@@ -183,6 +161,25 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
+    if (message.content.startsWith('!trust') && message.member.permissions.has('ManageGuild')) {
+      const mentionedUser = message.mentions.users.first();
+
+      if (!mentionedUser) {
+        await message.channel.send('usage: `!trust @user`');
+        return;
+      }
+
+      await pool.query(
+        `INSERT INTO user_trust (guild_id, discord_id, manually_trusted)
+         VALUES ($1, $2, TRUE)
+         ON CONFLICT (guild_id, discord_id) DO UPDATE
+         SET manually_trusted = TRUE`,
+        [message.guild.id, mentionedUser.id]
+      );
+
+      await message.channel.send(`${mentionedUser} has been manually trusted.`);
+      return;
+    }
 
     const userId = message.author.id;
     const now = Date.now();
