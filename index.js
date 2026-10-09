@@ -46,11 +46,17 @@ async function initDatabase() {
         guild_id TEXT NOT NULL,
         discord_id TEXT NOT NULL,
         message_count INTEGER DEFAULT 0,
+        manually_trusted BOOLEAN DEFAULT FALSE,
         PRIMARY KEY (guild_id, discord_id)
       );
     `);
     console.log('Database ready.');
 }
+
+await pool.query(`
+  ALTER TABLE user_trust
+  ADD COLUMN IF NOT EXISTS manually_trusted BOOLEAN DEFAULT FALSE;
+`);
 
 function normalizeText(text) {
   return text
@@ -144,6 +150,27 @@ client.on('messageCreate', async (message) => {
         return;
       }
 
+      if (message.content.startsWith('!trust') && message.member.permissions.has('ManageGuild')) {
+        const mentionedUser = message.mentions.users.first();
+
+        if (!mentionedUser) {
+          await message.channel.send('usage: `!trust @user`');
+          return;
+        }
+
+        await pool.query(
+          `INSERT INTO user_trust (guild_id, discord_id, manually_trusted)
+           VALUES ($1, $2, TRUE)
+           ON CONFLICT (guild_id, discord_id) DO UPDATE
+           SET manually_trusted = TRUE`,
+           [message.guild.id, mentionedUser.id]
+        );
+
+        await message.channel.send(`${mentionedUser} has been manually trusted.`);
+        return;
+      }
+      // End of !trust command handling
+
       await pool.query(
         'INSERT INTO guild_settings (guild_id, mod_log_channel_id, moderator_role_id) ' +
         'VALUES ($1, $2, $3) ' +
@@ -194,16 +221,17 @@ client.on('messageCreate', async (message) => {
         VALUES ($1, $2, 1)
         ON CONFLICT (guild_id, discord_id) DO UPDATE
         SET message_count = user_trust.message_count + 1
-        RETURNING message_count`,
+        RETURNING message_count, manually_trusted`,
         [message.guild.id, userId]
     );
     const currentCount = result.rows[0].message_count;
+    const isManuallyTrusted = result.rows[0].manually_trusted;
     //console.log(`${message.author.tag} now has ${currentCount} messages in the database.`);
 
     if (linkPattern.test(message.content)) {
       const joinedAt = message.member.joinedTimestamp;
       const daysInServer = (Date.now() - joinedAt) / (1000 * 60 * 60 * 24);
-      const isTrusted = currentCount >= TRUST_MESSAGES_THRESHOLD && daysInServer >= TRUST_DAYS_THRESHOLD;
+      const isTrusted = isManuallyTrusted || (currentCount >= TRUST_MESSAGES_THRESHOLD && daysInServer >= TRUST_DAYS_THRESHOLD);
 
       if (!isTrusted) {
         await message.delete();
