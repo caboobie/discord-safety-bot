@@ -1,5 +1,16 @@
 require('dotenv').config();
 
+const missingEnvironmentVariables = ['DISCORD_TOKEN', 'DATABASE_URL']
+  .filter(name => !process.env[name]);
+
+if (missingEnvironmentVariables.length > 0) {
+  console.error(
+    `Missing required environment variable${missingEnvironmentVariables.length > 1 ? 's' : ''}: ` +
+    `${missingEnvironmentVariables.join(', ')}. Set them in your environment or .env file before starting the bot.`
+  );
+  process.exit(1);
+}
+
 const { Pool } = require('pg');
 
 const pool = new Pool({
@@ -71,7 +82,7 @@ function normalizeText(text) {
     .replace(/[^a-z0-9\s]/g, '');
 }
 
-async function reportViolation(message, reason) {
+async function reportViolation(message, reasonCode, reason) {
   //console.log('reportViolation called. MOD_LOG_CHANNEL_ID:', process.env.MOD_LOG_CHANNEL_ID);
 
   const settingResult = await pool.query(
@@ -87,6 +98,7 @@ async function reportViolation(message, reason) {
 
   const report = `🚨 **Violation Detected**\n` +
     `**User:** ${message.author.tag} (${message.author.id})\n` +
+    `**Reason Code:** ${reasonCode}\n` +
     `**Reason:** ${reason}\n` +
     `**Message:** ${message.content}\n` +
     `<@&${moderator_role_id}>`;
@@ -169,6 +181,26 @@ client.on('messageCreate', async (message) => {
         return;
       }
 
+      if (message.content.startsWith('!status') && message.member.permissions.has('ManageGuild')) {
+        const settingResult = await pool.query(
+          'SELECT mod_log_channel_id, moderator_role_id FROM guild_settings WHERE guild_id = $1',
+          [message.guild.id]
+        );
+
+        if (settingResult.rows.length === 0) {
+          await message.channel.send('This server has not been configured yet. Run `!setup #mod-log-channel @ModeratorRole` to get started.');
+          return;
+        }
+
+        const { mod_log_channel_id, moderator_role_id } = settingResult.rows[0];
+        await message.channel.send(
+          `**Current server configuration**\n` +
+          `**Mod-log channel:** <#${mod_log_channel_id}>\n` +
+          `**Moderator role:** <@&${moderator_role_id}>`
+        );
+        return;
+      }
+
       await pool.query(
         `INSERT INTO user_trust (guild_id, discord_id, manually_trusted)
          VALUES ($1, $2, TRUE)
@@ -199,6 +231,7 @@ client.on('messageCreate', async (message) => {
     if (recentTimestamps.length >= 4) {
       await message.member.timeout(60000, 'Spam detected: too many messages too quickly');
       await message.channel.send(`${message.author} has been timed out for spamming.`);
+      await reportViolation(message, 'SPAM_RATE_EXCEEDED', 'Posted 4 or more messages within 5 seconds.');
       messageTimestamps.set(timestampKey, []);
       return;
     }
@@ -209,7 +242,7 @@ client.on('messageCreate', async (message) => {
     if (badWordsPattern.test(normalized) || badWordsPatternLoose.test(despaced)) {
       await message.delete();
       await message.channel.send(`${message.author} posted a message containing prohibited words.`);
-      await reportViolation(message, 'Posted a message containing prohibited words.');
+      await reportViolation(message, 'BANNED_TERM_MATCH', 'Posted a message containing prohibited words.');
       return;
     }
 
@@ -233,7 +266,7 @@ client.on('messageCreate', async (message) => {
       if (!isTrusted) {
         await message.delete();
         await message.channel.send(`${message.author} posted a link but is not trusted yet.`);
-        await reportViolation(message, 'Posted a link but is not trusted yet.');
+        await reportViolation(message, 'UNTRUSTED_LINK', 'Posted a link but is not trusted yet.');
         return;
       }
     }
