@@ -57,4 +57,3 @@ Once the bot is online, run the setup command in each server where you want mode
 
 - Node.js and discord.js
 - PostgreSQL
-
