@@ -54,6 +54,11 @@ async function initDatabase() {
     ADD COLUMN IF NOT EXISTS manually_trusted BOOLEAN DEFAULT FALSE;
   `);
 
+  await pool.query(`
+    ALTER TABLE guild_settings
+    ADD COLUMN IF NOT EXISTS moderation_mode TEXT DEFAULT 'enforce';
+  `);
+
   console.log('Database ready.');
 }
 
@@ -71,7 +76,15 @@ function normalizeText(text) {
     .replace(/[^a-z0-9\s]/g, '');
 }
 
-async function reportViolation(message, reason) {
+async function getModerationMode(guildId) {
+  const res = await pool.query(
+    'SELECT moderation_mode FROM guild_settings WHERE guild_id = $1',
+    [guildId]
+  );
+  return res.rows[0]?.moderation_mode === 'warn' ? 'warn' : 'enforce';
+}
+
+async function reportViolation(message, reason, mode = 'enforce') {
   //console.log('reportViolation called. MOD_LOG_CHANNEL_ID:', process.env.MOD_LOG_CHANNEL_ID);
 
   const settingResult = await pool.query(
@@ -88,6 +101,7 @@ async function reportViolation(message, reason) {
   const report = `🚨 **Violation Detected**\n` +
     `**User:** ${message.author.tag} (${message.author.id})\n` +
     `**Reason:** ${reason}\n` +
+    `**Mode:** ${mode}${mode === 'warn' ? ' (no action taken)' : ''}\n` +
     `**Message:** ${message.content}\n` +
     `<@&${moderator_role_id}>`;
 
@@ -181,6 +195,52 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
+    if (message.content.startsWith('!untrust') && message.member.permissions.has('ManageGuild')) {
+      const mentionedUser = message.mentions.users.first();
+
+      if (!mentionedUser) {
+        await message.channel.send('usage: `!untrust @user`');
+        return;
+      }
+
+      const untrustResult = await pool.query(
+        `UPDATE user_trust SET manually_trusted = FALSE
+         WHERE guild_id = $1 AND discord_id = $2`,
+        [message.guild.id, mentionedUser.id]
+      );
+
+      if (untrustResult.rowCount === 0) {
+        await message.channel.send(`${mentionedUser} has no trust record in this server; nothing to change.`);
+        return;
+      }
+
+      await message.channel.send(`${mentionedUser} is no longer manually trusted.`);
+      return;
+    }
+
+    if (message.content.startsWith('!mode') && message.member.permissions.has('ManageGuild')) {
+      const requested = (message.content.split(/\s+/)[1] || '').toLowerCase();
+
+      if (requested !== 'warn' && requested !== 'enforce') {
+        const current = await getModerationMode(message.guild.id);
+        await message.channel.send(`usage: \`!mode warn|enforce\` (current mode: ${current})`);
+        return;
+      }
+
+      const modeResult = await pool.query(
+        'UPDATE guild_settings SET moderation_mode = $2 WHERE guild_id = $1',
+        [message.guild.id, requested]
+      );
+
+      if (modeResult.rowCount === 0) {
+        await message.channel.send('Run `!setup #mod-log-channel @moderatorRole` first.');
+        return;
+      }
+
+      await message.channel.send(`Moderation mode set to **${requested}**.`);
+      return;
+    }
+
     const userId = message.author.id;
     const now = Date.now();
     const timestampKey = `${message.guild.id}-${userId}`;
@@ -196,10 +256,17 @@ client.on('messageCreate', async (message) => {
 
     console.log(`${message.author.tag}: ${recentTimestamps.length} messages in the last 5 seconds`);
 
+    const mode = await getModerationMode(message.guild.id);
+    const enforcing = mode === 'enforce';
+
     if (recentTimestamps.length >= 4) {
-      await message.member.timeout(60000, 'Spam detected: too many messages too quickly');
-      await message.channel.send(`${message.author} has been timed out for spamming.`);
       messageTimestamps.set(timestampKey, []);
+      if (enforcing) {
+        await message.member.timeout(60000, 'Spam detected: too many messages too quickly');
+        await message.channel.send(`${message.author} has been timed out for spamming.`);
+      } else {
+        await reportViolation(message, 'Spam detected: too many messages too quickly.', mode);
+      }
       return;
     }
 
@@ -207,9 +274,11 @@ client.on('messageCreate', async (message) => {
     const despaced = normalized.replace(/\s+/g, '');
 
     if (badWordsPattern.test(normalized) || badWordsPatternLoose.test(despaced)) {
-      await message.delete();
-      await message.channel.send(`${message.author} posted a message containing prohibited words.`);
-      await reportViolation(message, 'Posted a message containing prohibited words.');
+      if (enforcing) {
+        await message.delete();
+        await message.channel.send(`${message.author} posted a message containing prohibited words.`);
+      }
+      await reportViolation(message, 'Posted a message containing prohibited words.', mode);
       return;
     }
 
@@ -231,9 +300,11 @@ client.on('messageCreate', async (message) => {
       const isTrusted = isManuallyTrusted || (currentCount >= TRUST_MESSAGES_THRESHOLD && daysInServer >= TRUST_DAYS_THRESHOLD);
 
       if (!isTrusted) {
-        await message.delete();
-        await message.channel.send(`${message.author} posted a link but is not trusted yet.`);
-        await reportViolation(message, 'Posted a link but is not trusted yet.');
+        if (enforcing) {
+          await message.delete();
+          await message.channel.send(`${message.author} posted a link but is not trusted yet.`);
+        }
+        await reportViolation(message, 'Posted a link but is not trusted yet.', mode);
         return;
       }
     }
