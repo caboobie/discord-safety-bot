@@ -1,84 +1,60 @@
-# Discord Safety Bot
+# Last Line Defence
 
-A Discord moderation bot — automated spam detection, link filtering with a trust system, a bad-word filter resistant to common evasion tricks, new-account flagging, and per-server moderation logging. Runs as a single bot serving multiple Discord servers at once.
+**Launch your Discord server with confidence—and keep it safer from day one.** Last Line Defence brings essential moderation protections together with a straightforward setup, so you can spend less time configuring tools and more time building your community.
 
-![Discord safety bot screenshot](screenshot.png)
+## Getting Started
 
-## Add it to your server
+1. [Invite Last Line Defence to your server](YOUR_INVITE_URL_HERE) — replace this placeholder with the bot's invite URL.
+2. In your server, have an administrator with **Manage Server** permission configure the moderation log:
 
-[**Invite Last Line Defence to your Discord server →**](your-invite-link-here)
+   `!setup #mod-log-channel @ModeratorRole`
 
-Once invited, a server admin (someone with Manage Server permission) runs one command in any channel:
+3. To trust a member so they can post links without meeting the automatic trust thresholds, use:
 
-!setup #mod-log-channel @ModeratorRole
+   `!trust @user`
 
+## Protect your community
 
-That's it — no further setup needed.
-
-## Features
-
-- **Spam/raid detection** — automatically times out users posting too many messages too quickly, tracked separately per server
-- **Link filtering with trust** — new/inactive members can't post links until they've sent enough messages and been in the server long enough; trusted members pass through freely
-- **Bad-word filtering** — blocks prohibited words even when disguised with punctuation (`p.o.r.n`), leetspeak (`sc4m`), or spacing (`s c a m`)
-- **New-account gating** — flags accounts created very recently when they join, a common raid/bot pattern
-- **Violation reporting** — every action is logged to your server's configured mod channel, pings your Moderator role, and DMs the server owner
-- **Per-server configuration** — your settings are independent from every other server using the bot
-- **Persistent trust data** — stored in a database, so standing survives bot restarts
-
-## Tech
-
-- Node.js, discord.js
-- PostgreSQL
-- Hosted on Railway
+- **Spam protection:** times out members who send four or more messages within five seconds.
+- **Link filtering:** members need to meet the trust thresholds or be trusted by an administrator before posting links.
+- **Prohibited-word filtering:** catches blocked terms, including common punctuation, spacing, and character substitutions.
+- **New-account alerts:** flags members whose Discord account is less than three days old when they join.
+- **Moderation visibility:** sends violation reports to your configured mod-log channel and mentions your Moderator role.
+- **Server-specific settings:** each server has its own moderation channel, moderator role, and trust records.
 
 ## Self-hosting
 
-Prefer to run your own instance instead of using the hosted bot above? You can.
+Run your own instance with Node.js and PostgreSQL. The bot creates and updates its required database tables when it connects.
 
-### 1. Create a Discord bot application
+1. Create a Discord application and bot in the [Discord Developer Portal](https://discord.com/developers/applications).
+2. Enable **Message Content Intent** and **Server Members Intent** in the bot's privileged gateway intents.
+3. Invite your bot with permissions to view channels, send messages, manage messages, and moderate members. Ensure it can mention the configured moderator role.
+4. Clone and install the project:
 
-1. Go to the [Discord Developer Portal](https://discord.com/developers/applications), create a new application
-2. Under **Bot**, add a bot user and copy its token
-3. Enable **Message Content Intent** and **Server Members Intent** under Privileged Gateway Intents
-4. Under **OAuth2 → URL Generator**, select the `bot` scope and these permissions: View Channels, Send Messages, Manage Messages, Timeout Members, Kick Members
+   ```sh
+   git clone https://github.com/caboobie/discord-safety-bot.git
+   cd discord-safety-bot
+   npm install
+   ```
 
-### 2. Set up the project
+5. Copy `.env.example` to `.env`, then set your bot token and PostgreSQL connection string:
 
-git clone https://github.com/caboobie/discord-safety-bot.git
-cd discord-safety-bot
-npm install
+   ```sh
+   cp .env.example .env
+   ```
 
+6. Start the bot:
 
-### 3. Configure environment variables
+   ```sh
+   node index.js
+   ```
 
-DISCORD_TOKEN=your_bot_token
-DATABASE_URL=your_postgresql_connection_string
+   The required values are `DISCORD_TOKEN` and `DATABASE_URL`. The PostgreSQL database must be reachable by the bot.
 
+Once the bot is online, run the setup command in each server where you want moderation logging and protections enabled.
 
-### 4. Run it
+## Built with
 
-node index.js
+- Node.js and discord.js
+- PostgreSQL
 
-
-Once running, invite your bot and run `!setup` in any server exactly as described above — it works the same way regardless of who's hosting it.
-
-## Configuration
-
-Some thresholds are set as constants near the top of `index.js` and apply globally across all servers using this instance:
-
-- `TRUST_MESSAGES_THRESHOLD` — messages required before a user is trusted to post links (default: 15)
-- `TRUST_DAYS_THRESHOLD` — days in the server required for the same (default: 1)
-- `ACCOUNT_AGE_THRESHOLD` — account age (in days) under which new joiners get flagged (default: 3)
-
-The blocked word list lives in `badwords.js`.
-
-## What I learned
-
-- Working with a different runtime (Node.js) and library (discord.js) outside the browser
-- Async/await for operations that talk to an external API
-- Regular expressions, including handling real-world text evasion tricks
-- SQL, parameterized queries (and why they matter for security), and composite primary keys
-- Designing a database schema around multi-tenant data
-- Deploying and hosting a live, always-on Node.js application
-- Debugging real production issues: permission errors, role hierarchy, environment variable mismatches, duplicate-instance bugs
-- Reworking an architecture after an initial design decision turned out not to scale, rather than forcing the original plan to work
