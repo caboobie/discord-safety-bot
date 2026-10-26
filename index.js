@@ -84,7 +84,21 @@ async function getModerationMode(guildId) {
   return res.rows[0]?.moderation_mode === 'warn' ? 'warn' : 'enforce';
 }
 
-async function reportViolation(message, reason, mode = 'enforce') {
+function findBadWordMatch(normalized, despaced) {
+  let m = normalized.match(badWordsPattern);
+  if (m) {
+    const text = normalized.slice(0, m.index) + '**[[' + m[0] + ']]**' + normalized.slice(m.index + m[0].length);
+    return { word: m[0], context: text };
+  }
+  m = despaced.match(badWordsPatternLoose);
+  if (m) {
+    const text = despaced.slice(0, m.index) + '**[[' + m[0] + ']]**' + despaced.slice(m.index + m[0].length);
+    return { word: m[0], context: text, despaced: true };
+  }
+  return null;
+}
+
+async function reportViolation(message, reason, mode = 'enforce', detail = '') {
   //console.log('reportViolation called. MOD_LOG_CHANNEL_ID:', process.env.MOD_LOG_CHANNEL_ID);
 
   const settingResult = await pool.query(
@@ -103,6 +117,7 @@ async function reportViolation(message, reason, mode = 'enforce') {
     `**Reason:** ${reason}\n` +
     `**Mode:** ${mode}${mode === 'warn' ? ' (no action taken)' : ''}\n` +
     `**Message:** ${message.content}\n` +
+    (detail ? `${detail}\n` : '') +
     `<@&${moderator_role_id}>`;
 
   if (logChannel) {
@@ -273,12 +288,15 @@ client.on('messageCreate', async (message) => {
     const normalized = normalizeText(message.content);
     const despaced = normalized.replace(/\s+/g, '');
 
-    if (badWordsPattern.test(normalized) || badWordsPatternLoose.test(despaced)) {
+    const badMatch = findBadWordMatch(normalized, despaced);
+    if (badMatch) {
       if (enforcing) {
         await message.delete();
         await message.channel.send(`${message.author} posted a message containing prohibited words.`);
       }
-      await reportViolation(message, 'Posted a message containing prohibited words.', mode);
+      await reportViolation(message, 'Posted a message containing prohibited words.', mode,
+        `**Matched:** \`${badMatch.word}\`${badMatch.despaced ? ' (found after removing spaces)' : ''}\n` +
+        `**Normalized text:** ${badMatch.context}`.slice(0, 900));
       return;
     }
 
